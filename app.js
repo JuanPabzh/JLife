@@ -2,7 +2,8 @@ const USER='juanpabzh',PASS='LifeJuan10',KEY='jlife_v1';
 const PARTS=['Pecho','Espalda','Abdomen','Bíceps','Tríceps','Hombros','Piernas','Cardio','Descanso'];
 const SH=['Pec','Esp','Abd','Bíc','Trí','Hom','Pie','Car','Des'];
 const DIAS=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
-const TIPOS={ingreso:'Ingreso',gasto:'Gasto',ahorro:'Ahorro',pagar:'Por pagar',cobrar:'Por cobrar'};
+const TIPOS={ingreso:'Ingreso',gasto:'Gasto',pagar:'Por pagar',cobrar:'Por cobrar',ahorro:'Ahorro',aaho:'Pasado a ahorros',daho:'Retiro de ahorros',retiro:'Retiro de ahorro'};
+const FORM=['ingreso','gasto','pagar','cobrar'];
 const IMG={logo:'imagenes/logo-jlife.png',fin:'imagenes/jfinanzas.png',gym:'imagenes/jgym.png',pend:'imagenes/jpendientes.png'};
 
 // ---------- utilidades ----------
@@ -27,16 +28,22 @@ let DB;try{DB=JSON.parse(localStorage.getItem(KEY))}catch(e){}
 DB=DB||{ws:[{id:'propio',name:'Propio',lines:[]},{id:'jlegacy',name:'JLegacy',lines:['Style','Tech','Software','General']}],
  mov:[],plan:[[],[],[],[],[],[],[]],days:{},cfg:{peso:77,altura:170,edad:'',base:''}};
 DB.todo=DB.todo||[];
+if(!DB.ws.some(x=>x.id==='ahorros'))DB.ws.splice(Math.min(2,DB.ws.length),0,{id:'ahorros',name:'Ahorros',lines:[]});
 const persist=()=>localStorage.setItem(KEY,JSON.stringify(DB));
-const S={logged:localStorage.getItem('jl_auth')==='1',mod:null,tab:'disp',gtab:'sem',ptab:'dia',ws:'propio',date:today(),auto:true,add:false};
+const S={logged:localStorage.getItem('jl_auth')==='1',mod:null,tab:'disp',gtab:'sem',ptab:'dia',ws:'propio',date:today(),auto:true,add:false,sv:null};
 
 // ---------- finanzas ----------
 // pagar/cobrar solo cuentan en el disponible cuando están marcados (paid)
 const kind=x=>x.t==='pagar'?(x.paid?'gasto':''):x.t==='cobrar'?(x.paid?'ingreso':''):x.t;
 const sumK=(m,k)=>m.filter(x=>kind(x)===k).reduce((a,x)=>a+x.amt,0);
+const sumT=(m,t)=>m.filter(x=>x.t===t).reduce((a,x)=>a+x.amt,0);
 const sumP=(m,t)=>m.filter(x=>x.t===t&&!x.paid).reduce((a,x)=>a+x.amt,0);
-const fin=id=>{const m=DB.mov.filter(x=>x.ws===id),ing=sumK(m,'ingreso'),gas=sumK(m,'gasto'),aho=sumK(m,'ahorro');
+// aho = lo que Propio/negocio ha mandado a ahorros (neto de retiros). Incluye ahorros antiguos.
+const fin=id=>{const m=DB.mov.filter(x=>x.ws===id),ing=sumK(m,'ingreso'),gas=sumK(m,'gasto'),
+ aho=sumT(m,'ahorro')+sumT(m,'aaho')-sumT(m,'daho');
  return{m,ing,gas,aho,pagar:sumP(m,'pagar'),cobrar:sumP(m,'cobrar'),disp:ing-gas-aho}};
+// saldo de cada meta de ahorro (sección Ahorros)
+const metas=list=>{const o={};list.filter(x=>x.ws==='ahorros').forEach(x=>{const k=x.desc||'General';o[k]=(o[k]||0)+(x.t==='retiro'?-x.amt:x.t==='ahorro'?x.amt:0)});return o};
 const key=m=>(m.paid&&m.pd)||m.d;
 const newest=(a,c)=>key(c).localeCompare(key(a))||((c.ts||0)-(a.ts||0));
 
@@ -73,46 +80,61 @@ const vLogin=()=>`<div class="login"><img class="logo-img" src="${IMG.logo}" alt
 
 const vMenu=()=>{const n=pendCount(today());return`<div class="top"><img class="mlogo" src="${IMG.logo}" alt="JLife"><button class="ghost" style="font-size:12px" data-a="logout">Salir</button></div>
 <div class="hello"><h1>Hola, Juan</h1><small>${fdate(today())}</small></div>
-<button class="opt" data-a="mod" data-v="fin"><img class="ic" src="${IMG.fin}" alt=""><span><b>Finanzas</b><small>Propio · JLegacy · emprendimientos</small></span><em>›</em></button>
+<button class="opt" data-a="mod" data-v="fin"><img class="ic" src="${IMG.fin}" alt=""><span><b>Finanzas</b><small>Propio · JLegacy · ahorros · emprendimientos</small></span><em>›</em></button>
 <button class="opt" data-a="mod" data-v="gym"><img class="ic" src="${IMG.gym}" alt=""><span><b>Gimnasio</b><small>Rutina · calorías · déficit</small></span><em>›</em></button>
 <button class="opt" data-a="mod" data-v="pend"><img class="ic" src="${IMG.pend}" alt=""><span><b>Pendientes</b><small>${n?n+(n===1?' pendiente para hoy':' pendientes para hoy'):'Nada pendiente para hoy'}</small></span><em>›</em></button>
 <button class="ghost" style="font-size:12px;margin-top:18px" data-a="exp">⬇ Respaldar datos</button>`};
 
 const rowM=m=>{const pc=m.t==='pagar'||m.t==='cobrar';
- const tag=pc&&m.paid?(m.t==='pagar'?'Pagado':'Cobrado'):TIPOS[m.t];
- const c=m.t==='gasto'||m.t==='pagar'?'neg':m.t==='ahorro'?'sav':'pos';
- return`<div class="row"><span class="d">${key(m).slice(5)}</span><span class="t">${esc(m.desc||TIPOS[m.t])}<small>${tag}${m.line?' · '+esc(m.line):''}</small></span>
+ const tag=pc&&m.paid?(m.t==='pagar'?'Pagado':'Cobrado'):m.t==='ahorro'?(m.ws==='ahorros'?'Ingreso a ahorro':'Ahorro (antiguo)'):TIPOS[m.t];
+ const c=(m.t==='gasto'||m.t==='pagar'||m.t==='retiro')?'neg':(m.t==='ahorro'||m.t==='aaho')?'sav':'pos';
+ return`<div class="row"><span class="d">${key(m).slice(5)}</span><span class="t">${esc(m.desc||(m.ws==='ahorros'?'General':TIPOS[m.t]))}<small>${tag}${m.line?' · '+esc(m.line):''}</small></span>
 <b class="${pc&&!m.paid?'mut':c}">${money(m.amt)}</b>${pc?`<button class="chk ${m.paid?'on':''}" data-a="done" data-v="${m.id}"></button>`:''}<button class="x" data-a="del" data-v="${m.id}">×</button></div>`};
 
-const vForm=w=>`<div class="form"><div class="g2"><select id="ft">${Object.entries(TIPOS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
+const vForm=w=>`<div class="form"><div class="g2"><select id="ft">${FORM.map(k=>`<option value="${k}">${TIPOS[k]}</option>`).join('')}</select>
 <input id="fa" type="number" inputmode="decimal" placeholder="Monto"></div>
-<input id="fd" placeholder="Descripción (ej. Gorras, Arriendo, Meta moto)">
+<input id="fd" placeholder="Descripción (ej. Gorras, Arriendo)">
 <div class="g2">${w.lines.length?`<select id="fl">${w.lines.map(l=>`<option>${esc(l)}</option>`).join('')}</select>`:'<span></span>'}<input id="ff" type="date" value="${today()}"></div>
 <button class="btn" data-a="saveMov">Guardar</button></div>`;
 
+function vSav(){
+ const mt=metas(DB.mov),ks=Object.entries(mt),total=ks.reduce((a,[,v])=>a+v,0);
+ const am=DB.mov.filter(x=>x.ws==='ahorros').sort(newest);
+ let b=`<div class="big"><small>Total ahorrado</small><h1 class="sav">${money(total)}</h1></div>
+ <div class="g2" style="margin:8px 0"><button class="btn" data-a="sv" data-v="in">Ingresar</button><button class="btn" data-a="sv" data-v="out">Sacar</button></div>`;
+ if(S.sv==='in')b+=`<div class="form"><p class="empty">Sale de Propio · disponible ${money(fin('propio').disp)}</p>
+ <input id="sa" type="number" inputmode="decimal" placeholder="Monto">
+ <input id="sm" list="ml" placeholder="Meta (ej. Moto, Emergencias)"><datalist id="ml">${ks.map(([k])=>`<option value="${esc(k)}">`).join('')}</datalist>
+ <button class="btn" data-a="saveSv">Guardar en ahorros</button></div>`;
+ if(S.sv==='out'){const o=ks.filter(([,v])=>v>0);
+  b+=o.length?`<div class="form"><p class="empty">La plata pasa a Propio.</p>
+  <input id="sa" type="number" inputmode="decimal" placeholder="Monto">
+  <select id="sm">${o.map(([k,v])=>`<option value="${esc(k)}">${esc(k)} · ${money(v)}</option>`).join('')}</select>
+  <button class="btn" data-a="saveSv">Sacar y pasar a Propio</button></div>`:'<p class="empty">No hay ahorros para sacar.</p>'}
+ b+='<h3>Por meta</h3>'+(ks.filter(([,v])=>v!==0).map(([k,v])=>`<div class="row"><span class="t">${esc(k)}</span><b class="sav">${money(v)}</b></div>`).join('')||'<p class="empty">Aún no tienes ahorros.</p>');
+ b+='<h3>Movimientos de ahorro</h3>'+(am.length?am.map(rowM).join(''):'<p class="empty">Sin movimientos de ahorro.</p>');
+ return b}
+
 function vFin(){
- const w=DB.ws.find(x=>x.id===S.ws)||DB.ws[0];S.ws=w.id;const f=fin(w.id);let b='';
+ const w=DB.ws.find(x=>x.id===S.ws)||DB.ws[0];S.ws=w.id;
  const chips=DB.ws.map(x=>`<button class="chip ${x.id===w.id?'on':''}" data-a="ws" data-v="${x.id}">${esc(x.name)}</button>`).join('')+'<button class="chip" data-a="newws">＋ Nuevo</button>';
+ if(w.id==='ahorros')return`<div class="top"><button class="ghost" data-a="back">‹</button><b>Finanzas</b><span></span></div><div class="chips wrap">${chips}</div>${vSav()}`;
+ const f=fin(w.id);let b='';
  const mg=(w.id!=='propio'&&w.id!=='jlegacy')?`<div class="chips"><button class="chip s" data-a="renws">Renombrar</button><button class="chip s" data-a="delws">Borrar «${esc(w.name)}»</button></div>`:'';
  if(S.add)b+=vForm(w);
- if(S.tab==='disp'){
-  b+=`<div class="big"><small>Disponible · ${esc(w.name)}</small><h1 class="${f.disp<0?'neg':''}">${money(f.disp)}</h1>
-  <div class="mini"><span class="pos">↑ ${money(f.ing)}</span><span class="neg">↓ ${money(f.gas)}</span><span class="sav">◆ ${money(f.aho)}</span></div></div>`;
-  if(w.lines.length)b+='<h3>Por línea</h3>'+w.lines.map(l=>{const m=f.m.filter(x=>x.line===l),i=sumK(m,'ingreso'),g=sumK(m,'gasto');
-   return`<div class="row"><span class="t">${esc(l)}</span><span class="pos">${money(i)}</span><span class="neg">${money(g)}</span><b>${money(i-g)}</b></div>`}).join('');
-  b+='<h3>Movimientos (los más nuevos arriba)</h3>'+(f.m.length?[...f.m].sort(newest).slice(0,40).map(rowM).join(''):'<p class="empty">Sin movimientos. Toca ＋ para agregar.</p>');
- }else if(S.tab==='pend'){
+ if(S.tab==='pend'){
   const p=f.m.filter(x=>x.t==='pagar'||x.t==='cobrar').sort((a,c)=>(!!a.paid-!!c.paid)||newest(a,c));
   b+=`<div class="big"><small>Pagos pendientes · ${esc(w.name)}</small><h1 class="neg">${money(f.pagar)}</h1><div class="mini"><span class="pos">Por cobrar ${money(f.cobrar)}</span></div></div>
   <h3>Lista (el chulo marca pagado / cobrado)</h3>`+(p.length?p.map(rowM).join(''):'<p class="empty">Nada pendiente 🎉</p>');
  }else{
-  const g={};f.m.filter(x=>x.t==='ahorro').forEach(x=>{const k=x.desc||'General';g[k]=(g[k]||0)+x.amt});
-  b+=`<div class="big"><small>Ahorros · ${esc(w.name)}</small><h1 class="sav">${money(f.aho)}</h1></div><h3>Por meta</h3>`+
-   Object.entries(g).map(([k,v])=>`<div class="row"><span class="t">${esc(k)}</span><b class="sav">${money(v)}</b></div>`).join('')+
-   '<p class="empty">Usa ＋ → Ahorro. Un monto negativo es un retiro.</p>';
+  b+=`<div class="big"><small>Disponible · ${esc(w.name)}</small><h1 class="${f.disp<0?'neg':''}">${money(f.disp)}</h1>
+  <div class="mini"><span class="pos">↑ ${money(f.ing)}</span><span class="neg">↓ ${money(f.gas)}</span>${f.aho?`<span class="sav">◆ ${money(f.aho)}</span>`:''}</div></div>`;
+  if(w.lines.length)b+='<h3>Por línea</h3>'+w.lines.map(l=>{const m=f.m.filter(x=>x.line===l),i=sumK(m,'ingreso'),g=sumK(m,'gasto');
+   return`<div class="row"><span class="t">${esc(l)}</span><span class="pos">${money(i)}</span><span class="neg">${money(g)}</span><b>${money(i-g)}</b></div>`}).join('');
+  b+='<h3>Movimientos (los más nuevos arriba)</h3>'+(f.m.length?[...f.m].sort(newest).slice(0,40).map(rowM).join(''):'<p class="empty">Sin movimientos. Toca ＋ para agregar.</p>');
  }
  return`<div class="top"><button class="ghost" data-a="back">‹</button><b>Finanzas</b><button class="ghost" data-a="add">${S.add?'✕':'＋'}</button></div>
- <div class="chips wrap">${chips}</div>${mg}${b}${nav([['disp','Disponible'],['pend','Pendientes'],['aho','Ahorros']],S.tab,'tab')}`;
+ <div class="chips wrap">${chips}</div>${mg}${b}${nav([['disp','Disponible'],['pend','Pendientes']],S.tab,'tab')}`;
 }
 
 function vGym(){
@@ -185,21 +207,42 @@ function tick(){
 const A={
  login(){if($('#u').value.trim().toLowerCase()===USER&&$('#p').value===PASS){S.logged=true;localStorage.setItem('jl_auth','1');render(true)}else $('#err').textContent='Usuario o contraseña incorrectos'},
  logout(){S.logged=false;S.mod=null;localStorage.removeItem('jl_auth');render(true)},
- mod(v){S.mod=v;S.tab='disp';S.gtab='sem';S.ptab='dia';S.add=false;S.date=today();S.auto=true;render(true)},
- back(){S.mod=null;S.add=false;render(true)},
+ mod(v){S.mod=v;S.tab='disp';S.gtab='sem';S.ptab='dia';S.add=false;S.sv=null;S.date=today();S.auto=true;render(true)},
+ back(){S.mod=null;S.add=false;S.sv=null;render(true)},
  tab(v){S.tab=v;render(true)},gtab(v){S.gtab=v;render(true)},ptab(v){S.ptab=v;render(true)},
- ws(v){S.ws=v;render(true)},
- newws(){const n=prompt('Nombre del nuevo emprendimiento');if(n&&n.trim()){const id=uid();DB.ws.push({id,name:n.trim(),lines:[]});S.ws=id;persist();render()}},
+ ws(v){S.ws=v;S.sv=null;S.add=false;render(true)},
+ newws(){const n=prompt('Nombre del nuevo emprendimiento');if(n&&n.trim()){const id=uid();DB.ws.push({id,name:n.trim(),lines:[]});S.ws=id;S.sv=null;persist();render()}},
  renws(){const w=DB.ws.find(x=>x.id===S.ws),n=prompt('Nuevo nombre',w.name);if(n&&n.trim()){w.name=n.trim();persist();render()}},
  delws(){const w=DB.ws.find(x=>x.id===S.ws);
   if(confirm('¿Borrar «'+w.name+'» y todos sus movimientos? No se puede deshacer.')){
    DB.ws=DB.ws.filter(x=>x.id!==w.id);DB.mov=DB.mov.filter(x=>x.ws!==w.id);S.ws='propio';persist();render()}},
  add(){S.add=!S.add;render()},
- saveMov(){const amt=Number($('#fa').value);if(!amt)return;
+ saveMov(){const amt=Number($('#fa').value);if(!(amt>0))return;
   DB.mov.push({id:uid(),ws:S.ws,t:$('#ft').value,amt,desc:$('#fd').value.trim(),line:$('#fl')?$('#fl').value:'',d:$('#ff').value||today(),ts:Date.now()});
   persist();S.add=false;render()},
  done(v){const m=DB.mov.find(x=>x.id===v);m.paid=!m.paid;if(m.paid)m.pd=today();else delete m.pd;persist();render()},
- del(v){if(confirm('¿Borrar este movimiento?')){DB.mov=DB.mov.filter(x=>x.id!==v);persist();render()}},
+ del(v){const m=DB.mov.find(x=>x.id===v);if(!m)return;
+  const rest=DB.mov.filter(x=>m.g?x.g!==m.g:x.id!==v);
+  if(Object.values(metas(rest)).some(x=>x<0)){alert('No puedes borrar este movimiento: esa plata de ahorro ya se retiró.');return}
+  const n=m.g?DB.mov.filter(x=>x.g===m.g).length:1;
+  if(confirm(n>1?'Este movimiento está ligado a '+(n-1)+' más (ahorros ↔ Propio). Se borran todos. ¿Continuar?':'¿Borrar este movimiento?')){
+   DB.mov=rest;persist();render()}},
+ sv(v){S.sv=S.sv===v?null:v;render()},
+ saveSv(){const amt=Number($('#sa').value),k=(($('#sm').value||'').trim())||'General';
+  if(!(amt>0)){alert('Escribe un monto mayor a 0');return}
+  const g=uid(),ts=Date.now(),d=today(),desc=k==='General'?'':k;
+  if(S.sv==='in'){
+   const disp=fin('propio').disp;
+   if(amt>disp){alert('No alcanza: en Propio tienes '+money(disp)+' disponibles');return}
+   DB.mov.push({id:uid(),ws:'ahorros',t:'ahorro',amt,desc,d,ts,g});
+   DB.mov.push({id:uid(),ws:'propio',t:'aaho',amt,desc:'Ahorro: '+k,d,ts,g});
+  }else{
+   const have=metas(DB.mov)[k]||0;
+   if(amt>have){alert('No alcanza: en «'+k+'» tienes '+money(have));return}
+   DB.mov.push({id:uid(),ws:'ahorros',t:'retiro',amt,desc,d,ts,g});
+   DB.mov.push({id:uid(),ws:'propio',t:'daho',amt,desc:'Retiro de ahorro: '+k,d,ts,g});
+  }
+  persist();S.sv=null;render()},
  part(p){const g=DB.days[S.date]=gd(S.date);g.parts=tog(partsOf(S.date),p);persist();render()},
  cell(v){const[x,p]=v.split('|');const g=DB.days[x]=gd(x);g.parts=tog(partsOf(x),p);persist();render()},
  setbase(){DB.plan=weekOf(S.date).map(x=>[...partsOf(x)]);persist();alert('Listo: esta semana quedó como tu rutina base')},
@@ -230,5 +273,5 @@ setInterval(sync,30000);
 // fondo animado
 document.body.insertAdjacentHTML('afterbegin','<div id="bg"><i></i><i></i><i></i></div>');
 
-render(true);tick();
+render(true);
 if('serviceWorker' in navigator)navigator.serviceWorker.register('sw.js');
