@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claves VAPID</title>
+<style>
+body{font-family:sans-serif;background:#04060b;color:#fff;padding:16px;max-width:600px;margin:auto}
+button{padding:12px 18px;font-size:16px;border:0;border-radius:8px;background:#2563eb;color:#fff}
+textarea{width:100%;margin:6px 0 14px;padding:8px;background:#0a1120;color:#fff;border:1px solid #234;border-radius:8px;font-size:13px}
+</style>
+</head>
+<body>
+<h2>Generador de claves VAPID</h2>
+<button id="go">Generar claves</button>
+<p>PÚBLICA</p><textarea id="pub" rows="3" readonly></textarea>
+<p>PRIVADA (no la compartas con nadie)</p><textarea id="pri" rows="2" readonly></textarea>
+<p id="msg"></p>
+<script>
+const u=s=>Uint8Array.from(atob(s.replace(/-/g,'+').replace(/_/g,'/')+'=='.slice(0,(4-s.length%4)%4)),c=>c.charCodeAt(0));
+const e=a=>btoa(String.fromCharCode(...a)).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+document.getElementById('go').onclick=async()=>{try{
+ const k=await crypto.subtle.generateKey({name:'ECDSA',namedCurve:'P-256'},true,['sign']);
+ const j=await crypto.subtle.exportKey('jwk',k.privateKey);
+ const raw=new Uint8Array(65);raw[0]=4;raw.set(u(j.x),1);raw.set(u(j.y),33);
+ pub.value=e(raw);pri.value=j.d;
+ msg.textContent='Listo. Copia cada una y guárdalas.';
+}catch(err){msg.textContent='Error: '+err.message}};
+</script>
+</body>
+</html>
