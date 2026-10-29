@@ -44,9 +44,9 @@ const fin=id=>{const m=DB.mov.filter(x=>x.ws===id),ing=sumK(m,'ingreso'),gas=sum
  return{m,ing,gas,aho,pagar:sumP(m,'pagar'),cobrar:sumP(m,'cobrar'),disp:ing-gas-aho}};
 // saldo de cada meta de ahorro (sección Ahorros)
 const metas=list=>{const o={};list.filter(x=>x.ws==='ahorros').forEach(x=>{const k=x.desc||'General';o[k]=(o[k]||0)+(x.t==='retiro'?-x.amt:x.t==='ahorro'?x.amt:0)});return o};
-// dinero total de todo: ingresos − gastos de todas las secciones (lo ahorrado sigue contando)
+// dinero global: ingresos − gastos de todas las secciones (lo ahorrado sigue contando)
 const glob=()=>DB.ws.filter(w=>w.id!=='ahorros').reduce((a,w)=>{const f=fin(w.id);return a+f.ing-f.gas},0);
-const gl=()=>`<div style="display:flex;align-items:baseline;gap:8px;margin:6px 0 2px;padding-top:6px;border-top:1px solid var(--line)"><small class="mut">Dinero total de todo</small><b style="font-size:15px">${money(glob())}</b></div>`;
+const gl=()=>`<div style="display:flex;align-items:baseline;gap:8px;margin:6px 0 2px;padding-top:6px;border-top:1px solid var(--line)"><small class="mut">Dinero Global</small><b style="font-size:15px">${money(glob())}</b></div>`;
 const key=m=>(m.paid&&m.pd)||m.d;
 const newest=(a,c)=>key(c).localeCompare(key(a))||((c.ts||0)-(a.ts||0));
 
@@ -130,8 +130,9 @@ function vFin(){
   b+=`<div class="big"><small>Pagos pendientes · ${esc(w.name)}</small><h1 class="neg">${money(f.pagar)}</h1><div class="mini"><span class="pos">Por cobrar ${money(f.cobrar)}</span></div></div>${gl()}
   <h3>Lista (el chulo marca pagado / cobrado)</h3>`+(p.length?p.map(rowM).join(''):'<p class="empty">Nada pendiente 🎉</p>');
  }else{
+  const mk=today().slice(0,7),fm=f.m.filter(x=>key(x).slice(0,7)===mk),mi=sumK(fm,'ingreso'),mgs=sumK(fm,'gasto'),mes=dt(today()).toLocaleDateString('es-CO',{month:'long'});
   b+=`<div class="big"><small>Disponible · ${esc(w.name)}</small><h1 class="${f.disp<0?'neg':''}">${money(f.disp)}</h1>
-  <div class="mini"><span class="pos">↑ ${money(f.ing)}</span><span class="neg">↓ ${money(f.gas)}</span>${f.aho?`<span class="sav">◆ ${money(f.aho)}</span>`:''}</div></div>${gl()}`;
+  <div class="mini"><span class="mut">${mes}</span><span class="pos">↑ ${money(mi)}</span><span class="neg">↓ ${money(mgs)}</span>${f.aho?`<span class="sav">◆ ${money(f.aho)}</span>`:''}</div></div>${gl()}`;
   if(w.lines.length)b+='<h3>Por línea</h3>'+w.lines.map(l=>{const m=f.m.filter(x=>x.line===l),i=sumK(m,'ingreso'),g=sumK(m,'gasto');
    return`<div class="row"><span class="t">${esc(l)}</span><span class="pos">${money(i)}</span><span class="neg">${money(g)}</span><b>${money(i-g)}</b></div>`}).join('');
   b+='<h3>Movimientos (los más nuevos arriba)</h3>'+(f.m.length?[...f.m].sort(newest).slice(0,40).map(rowM).join(''):'<p class="empty">Sin movimientos. Toca ＋ para agregar.</p>');
